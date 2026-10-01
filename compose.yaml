@@ -1,0 +1,7 @@
+﻿services:
+  vulcanbot:
+    image: vulcanbot
+    build:
+      context: .
+      dockerfile: vulcanbot/Dockerfile
+
