@@ -60,10 +60,10 @@ public class VulcanRegistrationService(HttpClient client)
         request.Headers.Add("vDate", DateTimeOffset.UtcNow.ToString("r"));
 
         var response = await client.SendAsync(request, cancellationToken);
-        var jsonResponse = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Registration failed. " +
-                                                                               $"Status: {response.StatusCode}" +
+                                                                               $"Status: {response.StatusCode}. " +
                                                                                $"Message: {jsonResponse}");
 
         var deviceKey = new DeviceKey(privatePemKey, certPem, fingerprint);
