@@ -1,7 +1,7 @@
 namespace vulcanbot.Dto.Hebe;
 
 /// <summary>
-/// Test / quiz returned by <c>/api/mobile/exam/byPupil</c>.
+/// Test / quiz returned by <c>api/mobile/exam/byPupil</c>.
 /// </summary>
 public record HebeExam(
     int Id,
@@ -12,6 +12,5 @@ public record HebeExam(
     HebeDateTime DateModify,
     HebeDateTime Deadline,
     HebeTeacher Creator,
-    HebeSubject Subject,
-    int PupilId
+    HebeSubject Subject
     );

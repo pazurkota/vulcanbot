@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace vulcanbot.Dto.Hebe;
 
 /// <summary>
-/// Single entry returned by <c>/api/mobile/register/hebe</c> — one student available on the registered device.
+/// Single entry returned by <c>api/mobile/register/hebe</c> — one student available on the registered device.
 /// </summary>
 public record HebeAccount(
     string TopLevelPartition,

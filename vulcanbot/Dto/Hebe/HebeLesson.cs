@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 namespace vulcanbot.Dto.Hebe;
 
 /// <summary>
-/// Timetable entry returned by <c>/api/mobile/schedule/withchanges/byPupil</c>.
+/// Timetable entry returned by <c>api/mobile/schedule/byPupil</c>
+/// (changes are listed separately by <c>api/mobile/schedule/changes/byPupil</c>).
 /// </summary>
 public record HebeLesson(
     int Id,
@@ -44,6 +45,5 @@ public record HebeClass(
 public record HebeLessonChange(
     int Id,
     int Type,
-    bool IsMerge,
     bool Separation
     );

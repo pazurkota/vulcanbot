@@ -1,17 +1,27 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using vulcanbot.Service;
+using vulcanbot.Service.Hebe;
+using vulcanbot.Test.Helpers;
 
 namespace vulcanbot.Test.Service;
 
 public class VulcanRegistrationServiceTests
 {
-    private const string Token = "3S1ABCD";
+    private const string Token = "3s1abcd";
     private const string Pin = "123456";
-    private const string Symbol = "powiatwulkanowy";
-    private const string ExpectedUri = $"https://certyfikaty.vulcan.net.pl/{Symbol}/api/mobile/register/new";
+    private const string Symbol = "PowiatWulkanowy";
+    private const string ExpectedUrl = "https://lekcjaplus.vulcan.net.pl/powiatwulkanowy/api/mobile/register/new";
+    private const string RestUrl = "https://lekcjaplus.vulcan.net.pl/powiatwulkanowy/";
+
+    private const string SuccessResponse = """
+        {
+          "Envelope": { "LoginId": 2137, "UserLogin": "jan@example.com", "UserName": "jan@example.com", "RestURL": "https://lekcjaplus.vulcan.net.pl/powiatwulkanowy/" },
+          "Status": { "Code": 0, "Message": "OK" },
+          "RequestId": "c3b5a1f2", "Timestamp": 1793630593000, "TimestampFormatted": "2026-11-02 14:43:13"
+        }
+        """;
 
     private FakeHttpMessageHandler _handler = null!;
     private HttpClient _client = null!;
@@ -20,9 +30,13 @@ public class VulcanRegistrationServiceTests
     [SetUp]
     public void Setup()
     {
-        _handler = new FakeHttpMessageHandler(HttpStatusCode.OK, "{}");
+        _handler = new FakeHttpMessageHandler();
+        _handler.RespondTo(VulcanRoutingService.RoutingRulesUrl, "3S1,https://lekcjaplus.vulcan.net.pl\r\n", contentType: "text/plain");
+        _handler.RespondTo(ExpectedUrl, SuccessResponse);
         _client = new HttpClient(_handler);
-        _service = new VulcanRegistrationService(_client);
+        _service = new VulcanRegistrationService(
+            new HebeApiClient(_client, TimeProvider.System),
+            new VulcanRoutingService(_client));
     }
 
     [TearDown]
@@ -32,177 +46,132 @@ public class VulcanRegistrationServiceTests
         _handler.Dispose();
     }
 
+    private CapturedRequest RegisterRequest => _handler.Requests.Single(r => r.Uri!.ToString() == ExpectedUrl);
+
     [Test]
-    public async Task RegisterDeviceAsync_SendsPostToSymbolSpecificEndpoint()
+    public async Task RegisterDeviceAsync_PostsToRoutedBaseUrlWithLowercaseSymbol()
     {
         await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
 
-        Assert.That(_handler.Requests, Has.Count.EqualTo(1));
-        var request = _handler.Requests[0];
-        Assert.Multiple(() =>
-        {
-            Assert.That(request.Method, Is.EqualTo(HttpMethod.Post));
-            Assert.That(request.Uri, Is.EqualTo(new Uri(ExpectedUri)));
-        });
+        Assert.That(RegisterRequest.Method, Is.EqualTo(HttpMethod.Post));
     }
 
     [Test]
-    public async Task RegisterDeviceAsync_SetsVulcanHeaders()
+    public async Task RegisterDeviceAsync_SendsRegisterEnvelope()
     {
         await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
 
-        var headers = _handler.Requests[0].Headers;
+        using var json = JsonDocument.Parse(RegisterRequest.Body);
+        var envelope = json.RootElement.GetProperty("Envelope");
         Assert.Multiple(() =>
         {
-            Assert.That(headers["User-Agent"], Is.EqualTo("Dart 3.0 (dart:io)"));
-            Assert.That(headers["vOS"], Is.EqualTo("Android"));
-            Assert.That(headers["vDeviceModel"], Is.EqualTo(".NET 10"));
-            Assert.That(headers["vAPI"], Is.EqualTo("1"));
-            Assert.That(DateTimeOffset.TryParse(headers["vDate"], out var vDate), Is.True);
-            Assert.That(vDate, Is.EqualTo(DateTimeOffset.UtcNow).Within(TimeSpan.FromMinutes(1)));
+            Assert.That(envelope.GetProperty("OS").GetString(), Is.EqualTo("Android"));
+            Assert.That(envelope.GetProperty("DeviceModel").GetString(), Is.EqualTo(HebeConstants.DeviceModel));
+            Assert.That(envelope.GetProperty("CertificateType").GetString(), Is.EqualTo("X509"));
+            Assert.That(envelope.GetProperty("PIN").GetString(), Is.EqualTo(Pin));
+            Assert.That(envelope.GetProperty("SecurityToken").GetString(), Is.EqualTo("3S1ABCD"));
+            Assert.That(Guid.TryParse(envelope.GetProperty("SelfIdentifier").GetString(), out _), Is.True);
         });
     }
 
     [Test]
-    public async Task RegisterDeviceAsync_SendsJsonPayloadWithCredentialsAndDeviceInfo()
+    public async Task RegisterDeviceAsync_SentCertificateAndThumbprintMatchReturnedKeys()
     {
-        await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
+        var result = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
 
-        var request = _handler.Requests[0];
-        Assert.That(request.ContentType, Is.EqualTo("application/json"));
+        using var json = JsonDocument.Parse(RegisterRequest.Body);
+        var envelope = json.RootElement.GetProperty("Envelope");
+        using var sent = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(envelope.GetProperty("Certificate").GetString()!));
+        using var returned = X509Certificate2.CreateFromPem(result.DeviceKeys.CertificatePem);
 
-        using var json = JsonDocument.Parse(request.Body);
-        var root = json.RootElement;
         Assert.Multiple(() =>
         {
-            Assert.That(root.GetProperty("Pin").GetString(), Is.EqualTo(Pin));
-            Assert.That(root.GetProperty("Token").GetString(), Is.EqualTo(Token));
-            Assert.That(root.GetProperty("AppVersion").GetString(), Is.EqualTo("24.0.0"));
-            Assert.That(Guid.TryParse(root.GetProperty("DeviceId").GetString(), out _), Is.True);
-            Assert.That(root.GetProperty("DeviceName").GetString(), Is.EqualTo("vulcanbot"));
-            Assert.That(root.GetProperty("DeviceModel").GetString(), Is.EqualTo(".NET 10"));
-            Assert.That(root.GetProperty("DeviceType").GetString(), Is.EqualTo("Android"));
-            Assert.That(root.GetProperty("CertificateType").GetString(), Is.EqualTo("X509"));
+            Assert.That(sent.RawData, Is.EqualTo(returned.RawData));
+            Assert.That(envelope.GetProperty("CertificateThumbprint").GetString(), Is.EqualTo(result.DeviceKeys.Fingerprint));
+            Assert.That(json.RootElement.GetProperty("CertificateId").GetString(), Is.EqualTo(result.DeviceKeys.Fingerprint));
         });
     }
 
     [Test]
-    public async Task RegisterDeviceAsync_SentCertificateMatchesReturnedCertificate()
+    public async Task RegisterDeviceAsync_RequestIsSignedWithReturnedDeviceKey()
     {
         var result = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
 
-        using var json = JsonDocument.Parse(_handler.Requests[0].Body);
-        var sentCertBytes = Convert.FromBase64String(json.RootElement.GetProperty("Certificate").GetString()!);
-        using var sentCert = X509CertificateLoader.LoadCertificate(sentCertBytes);
-        using var returnedCert = X509Certificate2.CreateFromPem(result.DeviceKeys.CertificatePem);
-
-        Assert.That(sentCert.RawData, Is.EqualTo(returnedCert.RawData));
-    }
-
-    [Test]
-    public async Task RegisterDeviceAsync_ReturnsSymbolAndEndpointUrl()
-    {
-        var result = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(result.Symbol, Is.EqualTo(Symbol));
-            Assert.That(result.EndpointUrl, Is.EqualTo(ExpectedUri));
-        });
-    }
-
-    [Test]
-    public async Task RegisterDeviceAsync_ReturnsSelfSignedRsa2048Certificate()
-    {
-        var result = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
+        var request = RegisterRequest;
+        var signature = request.Headers["Signature"].Split("SHA256withRSA(")[1].TrimEnd(')');
+        var signedData = request.Headers["vCanonicalUrl"] + request.Headers["Digest"]["SHA-256=".Length..] + request.Headers["vDate"];
 
         using var cert = X509Certificate2.CreateFromPem(result.DeviceKeys.CertificatePem);
-        using var publicKey = cert.GetRSAPublicKey();
+        using var publicKey = cert.GetRSAPublicKey()!;
         Assert.Multiple(() =>
         {
-            Assert.That(cert.Subject, Is.EqualTo("CN=OpenVulcan"));
-            Assert.That(cert.Issuer, Is.EqualTo(cert.Subject));
-            Assert.That(publicKey, Is.Not.Null);
-            Assert.That(publicKey!.KeySize, Is.EqualTo(2048));
-            Assert.That(cert.NotBefore.ToUniversalTime(), Is.LessThanOrEqualTo(DateTime.UtcNow));
-            Assert.That(cert.NotAfter.ToUniversalTime(), Is.GreaterThan(DateTime.UtcNow.AddMonths(11)));
+            Assert.That(request.Headers["Signature"], Does.StartWith($"keyId=\"{result.DeviceKeys.Fingerprint}\""));
+            Assert.That(publicKey.VerifyData(System.Text.Encoding.UTF8.GetBytes(signedData), Convert.FromBase64String(signature),
+                HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1), Is.True);
         });
     }
 
     [Test]
-    public async Task RegisterDeviceAsync_PrivateKeyMatchesCertificate()
+    public async Task RegisterDeviceAsync_ReturnsDataFromResponse()
     {
         var result = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
 
-        Assert.That(result.DeviceKeys.PrivatePemKey, Does.StartWith("-----BEGIN PRIVATE KEY-----"));
-
-        using var certWithKey = X509Certificate2.CreateFromPem(
-            result.DeviceKeys.CertificatePem, result.DeviceKeys.PrivatePemKey);
-        using var privateKey = certWithKey.GetRSAPrivateKey()!;
-        using var publicKey = certWithKey.GetRSAPublicKey()!;
-
-        var data = "vulcanbot"u8.ToArray();
-        var signature = privateKey.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        Assert.That(publicKey.VerifyData(data, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1),
-            Is.True);
-    }
-
-    [Test]
-    public async Task RegisterDeviceAsync_FingerprintIsLowercaseSha1ThumbprintOfCertificate()
-    {
-        var result = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
-
-        using var cert = X509Certificate2.CreateFromPem(result.DeviceKeys.CertificatePem);
         Assert.Multiple(() =>
         {
-            Assert.That(result.DeviceKeys.Fingerprint, Is.EqualTo(cert.Thumbprint.ToLowerInvariant()));
-            Assert.That(result.DeviceKeys.Fingerprint, Does.Match("^[0-9a-f]{40}$"));
+            Assert.That(result.Symbol, Is.EqualTo("powiatwulkanowy"));
+            Assert.That(result.RestUrl, Is.EqualTo(RestUrl));
+            Assert.That(result.LoginId, Is.EqualTo(2137));
+            Assert.That(result.UserLogin, Is.EqualTo("jan@example.com"));
+            Assert.That(result.UserName, Is.EqualTo("jan@example.com"));
         });
     }
 
     [Test]
-    public async Task RegisterDeviceAsync_GeneratesNewKeysAndDeviceIdOnEachCall()
+    public async Task RegisterDeviceAsync_ReturnsMatchingRsa2048KeyPair()
+    {
+        var result = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
+
+        using var cert = X509Certificate2.CreateFromPem(result.DeviceKeys.CertificatePem, result.DeviceKeys.PrivatePemKey);
+        using var rsa = cert.GetRSAPrivateKey()!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(rsa.KeySize, Is.EqualTo(2048));
+            Assert.That(cert.HasPrivateKey, Is.True);
+            Assert.That(result.DeviceKeys.Fingerprint, Is.EqualTo(Convert.ToHexStringLower(SHA1.HashData(cert.RawData))));
+        });
+    }
+
+    [Test]
+    public async Task RegisterDeviceAsync_GeneratesNewKeysOnEachCall()
     {
         var first = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
         var second = await _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None);
 
-        using var firstJson = JsonDocument.Parse(_handler.Requests[0].Body);
-        using var secondJson = JsonDocument.Parse(_handler.Requests[1].Body);
-        Assert.Multiple(() =>
-        {
-            Assert.That(second.DeviceKeys.PrivatePemKey, Is.Not.EqualTo(first.DeviceKeys.PrivatePemKey));
-            Assert.That(second.DeviceKeys.Fingerprint, Is.Not.EqualTo(first.DeviceKeys.Fingerprint));
-            Assert.That(secondJson.RootElement.GetProperty("DeviceId").GetString(),
-                Is.Not.EqualTo(firstJson.RootElement.GetProperty("DeviceId").GetString()));
-        });
-    }
-
-    [TestCase(HttpStatusCode.BadRequest)]
-    [TestCase(HttpStatusCode.Unauthorized)]
-    [TestCase(HttpStatusCode.NotFound)]
-    [TestCase(HttpStatusCode.InternalServerError)]
-    public void RegisterDeviceAsync_NonSuccessStatus_ThrowsInvalidOperationException(HttpStatusCode statusCode)
-    {
-        _handler.StatusCode = statusCode;
-
-        var ex = Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None));
-
-        Assert.That(ex!.Message, Does.StartWith("Registration failed."));
-        Assert.That(ex.Message, Does.Contain($"Status: {statusCode}"));
+        Assert.That(first.DeviceKeys.Fingerprint, Is.Not.EqualTo(second.DeviceKeys.Fingerprint));
     }
 
     [Test]
-    public void RegisterDeviceAsync_NonSuccessStatus_IncludesResponseBodyInMessage()
+    public void RegisterDeviceAsync_WrongPin_ThrowsInvalidPin()
     {
-        const string errorBody = """{"Status":{"Code":200,"Message":"Invalid PIN"}}""";
-        _handler.StatusCode = HttpStatusCode.BadRequest;
-        _handler.ResponseBody = errorBody;
+        _handler.RespondTo(ExpectedUrl, """{"Envelope":null,"Status":{"Code":203,"Message":"Niepoprawny PIN"}}""");
 
-        var ex = Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = Assert.ThrowsAsync<VulcanApiException>(() =>
             _service.RegisterDeviceAsync(Token, Pin, Symbol, CancellationToken.None));
 
-        Assert.That(ex!.Message, Is.EqualTo($"Registration failed. Status: BadRequest. Message: {errorBody}"));
+        Assert.That(ex!.Kind, Is.EqualTo(VulcanErrorKind.InvalidPin));
+    }
+
+    [Test]
+    public void RegisterDeviceAsync_UnknownTokenPrefix_ThrowsBeforeContactingVulcan()
+    {
+        var ex = Assert.ThrowsAsync<VulcanApiException>(() =>
+            _service.RegisterDeviceAsync("XX9ABC", Pin, Symbol, CancellationToken.None));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ex!.Kind, Is.EqualTo(VulcanErrorKind.InvalidToken));
+            Assert.That(_handler.Requests.Select(r => r.Uri!.ToString()), Is.EqualTo(new[] { VulcanRoutingService.RoutingRulesUrl }));
+        });
     }
 
     [Test]
@@ -213,41 +182,5 @@ public class VulcanRegistrationServiceTests
 
         Assert.That(() => _service.RegisterDeviceAsync(Token, Pin, Symbol, cts.Token),
             Throws.InstanceOf<OperationCanceledException>());
-    }
-
-    private sealed record CapturedRequest(
-        HttpMethod Method,
-        Uri? Uri,
-        IReadOnlyDictionary<string, string> Headers,
-        string? ContentType,
-        string Body);
-
-    private sealed class FakeHttpMessageHandler(HttpStatusCode statusCode, string responseBody) : HttpMessageHandler
-    {
-        public HttpStatusCode StatusCode { get; set; } = statusCode;
-        public string ResponseBody { get; set; } = responseBody;
-        public List<CapturedRequest> Requests { get; } = [];
-
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // Request is disposed by the service after SendAsync returns, so capture everything now.
-            var headers = request.Headers.ToDictionary(h => h.Key, h => string.Join(" ", h.Value));
-            var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
-            Requests.Add(new CapturedRequest(
-                request.Method,
-                request.RequestUri,
-                headers,
-                request.Content?.Headers.ContentType?.MediaType,
-                body));
-
-            return new HttpResponseMessage(StatusCode)
-            {
-                Content = new StringContent(ResponseBody)
-            };
-        }
     }
 }
