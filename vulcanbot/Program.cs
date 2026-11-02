@@ -16,6 +16,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient<HebeApiClient>();
 builder.Services.AddHttpClient<VulcanRoutingService>();
 builder.Services.AddTransient<VulcanRegistrationService>();
+builder.Services.AddTransient<VulcanDataService>();
 
 using var host = builder.Build();
 await host.RunAsync();

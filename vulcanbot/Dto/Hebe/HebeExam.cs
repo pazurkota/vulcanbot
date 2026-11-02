@@ -12,5 +12,6 @@ public record HebeExam(
     HebeDateTime DateModify,
     HebeDateTime Deadline,
     HebeTeacher Creator,
-    HebeSubject Subject
+    HebeSubject Subject,
+    int? PupilId
     );

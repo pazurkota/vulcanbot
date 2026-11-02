@@ -21,7 +21,8 @@ public record HebeUnit(
     string Short,
     [property: JsonPropertyName("RestURL")] string RestUrl,
     string Name,
-    string DisplayName
+    string DisplayName,
+    string? Address
     );
 
 public record HebeConstituentUnit(
@@ -38,7 +39,7 @@ public record HebePupil(
     string FirstName,
     string? SecondName,
     string Surname,
-    bool Sex
+    bool Sex // true = male, false = female
     );
 
 public record HebePeriod(

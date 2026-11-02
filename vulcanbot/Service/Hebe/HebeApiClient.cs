@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -28,7 +29,7 @@ public class HebeApiClient(HttpClient client, TimeProvider timeProvider)
             API: 1,
             RequestId: Guid.NewGuid().ToString(),
             Timestamp: now.ToUnixTimeMilliseconds(),
-            TimestampFormatted: now.ToString("yyyy-MM-dd HH:mm:ss")
+            TimestampFormatted: now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
             );
 
         return SendAsync<TResponse>(HttpMethod.Post, fullUrl, JsonSerializer.Serialize(request), deviceKey, now, cancellationToken);

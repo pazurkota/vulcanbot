@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace vulcanbot.Dto.Hebe;
 
 /// <summary>
@@ -13,5 +15,5 @@ public record HebeDateTime(
 {
     public DateTime ToUtcDateTime() => DateTimeOffset.FromUnixTimeMilliseconds(Timestamp).UtcDateTime;
 
-    public DateOnly ToDateOnly() => DateOnly.ParseExact(Date, "yyyy-MM-dd");
+    public DateOnly ToDateOnly() => DateOnly.ParseExact(Date, "yyyy-MM-dd", CultureInfo.InvariantCulture);
 }
