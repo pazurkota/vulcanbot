@@ -22,7 +22,7 @@ test-unit: ## Run tests that don't need Docker
 	dotnet test $(SOLUTION) --filter "FullyQualifiedName~vulcanbot.Test.Service"
 
 run: ## Run the bot locally (needs Postgres: make up)
-	dotnet run --project $(PROJECT)
+	cd $(PROJECT) && dotnet run
 
 migration: ## Add an EF Core migration: make migration NAME=AddSomething
 	@test -n "$(NAME)" || (echo "Usage: make migration NAME=<MigrationName>" && exit 1)
