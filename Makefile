@@ -55,5 +55,5 @@ register: ## Register a device from the eduVULCAN #ap JSON: make register [AP=ap
 	@test -f "$(AP)" || (echo "$(AP) not found — save the #ap value from https://eduvulcan.pl/api/ap there" && exit 1)
 	docker compose run --rm --build -T vulcanbot register < $(AP)
 
-sync: ## Fetch homework and exams for all registered accounts into the database
+sync: ## Fetch homework, exams and the timetable for all registered accounts into the database
 	docker compose run --rm --build -T vulcanbot sync

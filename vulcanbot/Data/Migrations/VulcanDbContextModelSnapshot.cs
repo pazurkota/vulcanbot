@@ -156,6 +156,9 @@ namespace vulcanbot.Data.Migrations
                     b.Property<DateTime?>("CalendarSyncedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ChangeReason")
+                        .HasColumnType("text");
+
                     b.Property<string>("ChangeType")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -169,6 +172,9 @@ namespace vulcanbot.Data.Migrations
 
                     b.Property<string>("Event")
                         .HasColumnType("text");
+
+                    b.Property<DateOnly?>("MovedToDate")
+                        .HasColumnType("date");
 
                     b.Property<int>("Position")
                         .HasColumnType("integer");
@@ -195,7 +201,7 @@ namespace vulcanbot.Data.Migrations
 
                     b.HasIndex("AccountId", "Date");
 
-                    b.HasIndex("AccountId", "VulcanId")
+                    b.HasIndex("AccountId", "VulcanId", "Date")
                         .IsUnique();
 
                     b.ToTable("Lessons");

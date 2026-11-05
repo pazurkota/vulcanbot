@@ -31,7 +31,7 @@ public class HebeClient(HttpClient client)
         PropertyNameCaseInsensitive = true,
         RespectNullableAnnotations = true,
         RespectRequiredConstructorParameters = true,
-        Converters = { new HebeDateTimeConverter(), new HebeDateOnlyConverter() }
+        Converters = { new HebeDateTimeConverter(), new HebeDateOnlyConverter(), new HebeTimeOnlyConverter() }
     };
 
     public Task<T?> GetAsync<T>(string url, DeviceKey key, int? pupilId, CancellationToken cancellationToken) =>

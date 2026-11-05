@@ -74,3 +74,23 @@ public class HebeDateOnlyConverter : JsonConverter<DateOnly>
     public override void Write(Utf8JsonWriter writer, DateOnly value, JsonSerializerOptions options) =>
         writer.WriteStringValue(value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
 }
+
+/// <summary>
+/// Lesson times (<c>TimeSlot.Start</c>/<c>End</c>) — accepts <c>08:00</c> and <c>08:00:00</c>.
+/// </summary>
+public class HebeTimeOnlyConverter : JsonConverter<TimeOnly>
+{
+    private static readonly string[] Formats = ["HH:mm", "HH:mm:ss", "H:mm", "H:mm:ss"];
+
+    public override TimeOnly Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var text = reader.GetString();
+        if (TimeOnly.TryParseExact(text, Formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var value))
+            return value;
+
+        throw new JsonException($"'{text}' is not a time.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, TimeOnly value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(value.ToString("HH:mm:ss", CultureInfo.InvariantCulture));
+}

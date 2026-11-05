@@ -18,6 +18,7 @@ builder.Services.AddHttpClient<HebeClient>();
 builder.Services.AddTransient<VulcanRegistrationService>();
 builder.Services.AddTransient<HomeworkSyncService>();
 builder.Services.AddTransient<ExamSyncService>();
+builder.Services.AddTransient<LessonSyncService>();
 
 using var host = builder.Build();
 
@@ -85,13 +86,15 @@ static async Task RegisterAsync(IServiceProvider services, string? path)
 }
 
 // Usage: vulcanbot sync
-// Fetches homework and exams due from 2 weeks ago to 2 months ahead for every registered account.
+// Fetches homework and exams due from 2 weeks ago to 2 months ahead, and the timetable (with substitutions
+// and cancellations) from a week ago to 3 weeks ahead, for every registered account.
 static async Task<int> SyncAsync(IServiceProvider services)
 {
     await using var scope = services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<VulcanDbContext>();
     var homeworkSync = scope.ServiceProvider.GetRequiredService<HomeworkSyncService>();
     var examSync = scope.ServiceProvider.GetRequiredService<ExamSyncService>();
+    var lessonSync = scope.ServiceProvider.GetRequiredService<LessonSyncService>();
 
     await db.Database.MigrateAsync();
 
@@ -111,8 +114,11 @@ static async Task<int> SyncAsync(IServiceProvider services)
             var (from, to) = (today.AddDays(-14), today.AddMonths(2));
             var homework = await homeworkSync.SyncAsync(account, from, to, CancellationToken.None);
             var exams = await examSync.SyncAsync(account, from, to, CancellationToken.None);
+            // Shorter window: ~8 lessons a day must fit in one 500-item page.
+            var lessons = await lessonSync.SyncAsync(account, today.AddDays(-7), today.AddDays(21),
+                CancellationToken.None);
             Console.WriteLine($"{account.FirstName} {account.Surname}: " +
-                              $"homework {Describe(homework)}; exams {Describe(exams)}");
+                              $"homework {Describe(homework)}; exams {Describe(exams)}; lessons {Describe(lessons)}");
         }
         catch (HebeException e)
         {
