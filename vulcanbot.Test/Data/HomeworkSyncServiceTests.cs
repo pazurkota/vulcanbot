@@ -86,7 +86,7 @@ public class HomeworkSyncServiceTests
         var homework = await context.Homeworks.SingleAsync();
         Assert.Multiple(() =>
         {
-            Assert.That(result, Is.EqualTo(new HomeworkSyncResult(Fetched: 1, Added: 1, Updated: 0)));
+            Assert.That(result, Is.EqualTo(new SyncResult(Fetched: 1, Added: 1, Updated: 0)));
             Assert.That(homework.AccountId, Is.EqualTo(_account.Id));
             Assert.That(homework.VulcanId, Is.EqualTo(201));
             Assert.That(homework.Content, Is.EqualTo("Zad. 1-5 str. 42"));
@@ -114,7 +114,7 @@ public class HomeworkSyncServiceTests
         var homework = await context.Homeworks.SingleAsync();
         Assert.Multiple(() =>
         {
-            Assert.That(result, Is.EqualTo(new HomeworkSyncResult(Fetched: 1, Added: 0, Updated: 1)));
+            Assert.That(result, Is.EqualTo(new SyncResult(Fetched: 1, Added: 0, Updated: 1)));
             Assert.That(homework.Content, Is.EqualTo("Zad. 1-10"));
             Assert.That(homework.Deadline, Is.EqualTo(new DateOnly(2026, 11, 13)));
             Assert.That(homework.CalendarEventId, Is.EqualTo("event-1"), "Event id is kept so the event gets updated.");
@@ -135,7 +135,7 @@ public class HomeworkSyncServiceTests
         var homework = await context.Homeworks.SingleAsync();
         Assert.Multiple(() =>
         {
-            Assert.That(result, Is.EqualTo(new HomeworkSyncResult(Fetched: 1, Added: 0, Updated: 0)));
+            Assert.That(result, Is.EqualTo(new SyncResult(Fetched: 1, Added: 0, Updated: 0)));
             Assert.That(homework.CalendarSyncedAt, Is.Not.Null);
         });
     }
@@ -214,7 +214,7 @@ public class HomeworkSyncServiceTests
         Assert.ThrowsAsync<HebeException>(() => SyncAsync());
     }
 
-    private async Task<HomeworkSyncResult> SyncAsync(VulcanAccount? account = null)
+    private async Task<SyncResult> SyncAsync(VulcanAccount? account = null)
     {
         await using var context = PostgresFixture.CreateContext();
         var service = new HomeworkSyncService(new HebeClient(_client), context);

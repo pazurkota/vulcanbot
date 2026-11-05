@@ -64,13 +64,13 @@ The bot reads its connection string from `ConnectionStrings:Default`. Docker Com
 
 Your eduVULCAN password is never given to the bot. Pass `AP=path/to/file.json` to use a different file.
 
-5. Fetch homework into the database:
+5. Fetch homework and exams into the database:
 
    ```bash
    make sync          # docker compose run --rm --build -T vulcanbot sync
    ```
 
-   For every registered account this downloads homework due from 2 weeks ago to 2 months ahead and stores it in the `Homeworks` table. New items are added; items changed in Vulcan are updated and marked for the next calendar sync. Run it as often as you like — it is safe to repeat.
+   For every registered account this downloads homework and exams due from 2 weeks ago to 2 months ahead and stores them in the `Homeworks` and `Exams` tables. New items are added; items changed in Vulcan are updated and marked for the next calendar sync. Run it as often as you like — it is safe to repeat.
 
 ### Registration troubleshooting
 
@@ -140,4 +140,4 @@ Run `make` to list all targets:
 | `up`, `down`, `logs`, `ps`, `image` | Docker Compose lifecycle |
 | `psql` | Open psql in the Postgres container |
 | `register [AP=ap.json]` | Register a device from the eduVULCAN `#ap` JSON |
-| `sync` | Fetch homework for all registered accounts |
+| `sync` | Fetch homework and exams for all registered accounts |

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using vulcanbot.Dto;
 
@@ -49,4 +50,15 @@ public class VulcanAccount
 
         return $"{restUrl}/{endpoint}";
     }
+
+    /// <summary>
+    /// URL of a <c>.../byPupil</c> endpoint filtered by date range, e.g. <c>mobile/exam/byPupil</c>.
+    /// </summary>
+    public string HebeByPupilUrl(string endpoint, DateOnly from, DateOnly to, int pageSize = 500) =>
+        HebeUrl(endpoint) +
+        $"?unitId={UnitId}" +
+        $"&pupilId={PupilId}" +
+        $"&dateFrom={from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" +
+        $"&dateTo={to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" +
+        $"&pageSize={pageSize}";
 }

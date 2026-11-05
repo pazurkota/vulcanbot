@@ -17,6 +17,7 @@ builder.Services.AddDbContext<VulcanDbContext>(options => options.UseNpgsql(conn
 builder.Services.AddHttpClient<HebeClient>();
 builder.Services.AddTransient<VulcanRegistrationService>();
 builder.Services.AddTransient<HomeworkSyncService>();
+builder.Services.AddTransient<ExamSyncService>();
 
 using var host = builder.Build();
 
@@ -84,12 +85,13 @@ static async Task RegisterAsync(IServiceProvider services, string? path)
 }
 
 // Usage: vulcanbot sync
-// Fetches homework due from 2 weeks ago to 2 months ahead for every registered account.
+// Fetches homework and exams due from 2 weeks ago to 2 months ahead for every registered account.
 static async Task<int> SyncAsync(IServiceProvider services)
 {
     await using var scope = services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<VulcanDbContext>();
     var homeworkSync = scope.ServiceProvider.GetRequiredService<HomeworkSyncService>();
+    var examSync = scope.ServiceProvider.GetRequiredService<ExamSyncService>();
 
     await db.Database.MigrateAsync();
 
@@ -106,10 +108,11 @@ static async Task<int> SyncAsync(IServiceProvider services)
     {
         try
         {
-            var result = await homeworkSync.SyncAsync(account, today.AddDays(-14), today.AddMonths(2),
-                CancellationToken.None);
-            Console.WriteLine($"{account.FirstName} {account.Surname}: homework fetched {result.Fetched}, " +
-                              $"added {result.Added}, updated {result.Updated}");
+            var (from, to) = (today.AddDays(-14), today.AddMonths(2));
+            var homework = await homeworkSync.SyncAsync(account, from, to, CancellationToken.None);
+            var exams = await examSync.SyncAsync(account, from, to, CancellationToken.None);
+            Console.WriteLine($"{account.FirstName} {account.Surname}: " +
+                              $"homework {Describe(homework)}; exams {Describe(exams)}");
         }
         catch (HebeException e)
         {
@@ -122,3 +125,6 @@ static async Task<int> SyncAsync(IServiceProvider services)
 
     return failed == 0 ? 0 : 1;
 }
+
+static string Describe(SyncResult result) =>
+    $"fetched {result.Fetched}, added {result.Added}, updated {result.Updated}";

@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using vulcanbot.Data;
 using vulcanbot.Dto.Hebe;
@@ -7,28 +6,19 @@ using vulcanbot.Service.Hebe;
 
 namespace vulcanbot.Service;
 
-public record HomeworkSyncResult(int Fetched, int Added, int Updated);
-
 /// <summary>
 /// Fetches homework from Hebe and upserts it into the database by (AccountId, VulcanId).
 /// </summary>
 public class HomeworkSyncService(HebeClient hebe, VulcanDbContext db)
 {
-    private const int PageSize = 500;
-
-    public async Task<HomeworkSyncResult> SyncAsync(
+    public async Task<SyncResult> SyncAsync(
         VulcanAccount account,
         DateOnly from,
         DateOnly to,
         CancellationToken cancellationToken
         )
     {
-        var url = account.HebeUrl("mobile/homework/byPupil") +
-                  $"?unitId={account.UnitId}" +
-                  $"&pupilId={account.PupilId}" +
-                  $"&dateFrom={from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" +
-                  $"&dateTo={to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" +
-                  $"&pageSize={PageSize}";
+        var url = account.HebeByPupilUrl("mobile/homework/byPupil", from, to);
 
         var fetched = (await hebe.GetAsync<List<HebeHomework>>(url, account.ToDeviceKey(), account.PupilId,
             cancellationToken) ?? []).DistinctBy(h => h.Id).ToList();
@@ -61,7 +51,7 @@ public class HomeworkSyncService(HebeClient hebe, VulcanDbContext db)
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        return new HomeworkSyncResult(fetched.Count, added, updated);
+        return new SyncResult(fetched.Count, added, updated);
     }
 
     private static void Apply(Homework homework, HebeHomework item)
