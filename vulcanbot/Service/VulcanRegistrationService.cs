@@ -1,72 +1,69 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Text.Json;
 using vulcanbot.Dto;
+using vulcanbot.Dto.Hebe;
+using vulcanbot.Service.Hebe;
 
 namespace vulcanbot.Service;
 
-public class VulcanRegistrationService(HttpClient client)
+/// <summary>
+/// Registers vulcanbot as a new eduVULCAN device using the one-time JWT tokens from https://eduvulcan.pl/api/ap.
+/// </summary>
+public class VulcanRegistrationService(HebeClient hebe)
 {
-    public async Task<RegistrationResult> RegisterDeviceAsync(
-        string token,
-        string pin,
-        string symbol,
-        CancellationToken cancellationToken
-        )
+    public async Task<RegistrationResult> RegisterDeviceAsync(string apInput, CancellationToken cancellationToken)
+    {
+        var tokensByTenant = EduVulcanApParser.ParseTokensByTenant(apInput);
+        var (deviceKey, certificate) = CreateDeviceKey();
+        var deviceId = Guid.NewGuid().ToString();
+        var accounts = new List<HebeAccount>();
+
+        foreach (var (tenant, tokens) in tokensByTenant)
+        {
+            var restUrl = $"{HebeClient.BaseUrl}/{tenant}/api";
+
+            await hebe.PostAsync<object>($"{restUrl}/mobile/register/jwt", deviceKey, new
+            {
+                OS = HebeClient.DeviceOs,
+                Certificate = Convert.ToBase64String(certificate),
+                CertificateType = "X509",
+                DeviceModel = HebeClient.DeviceModel,
+                SelfIdentifier = deviceId,
+                CertificateThumbprint = deviceKey.Fingerprint,
+                Tokens = tokens
+            }, pupilId: null, cancellationToken);
+
+            var tenantAccounts = await hebe.GetAsync<List<HebeAccount>>(
+                $"{restUrl}/mobile/register/hebe?mode=2", deviceKey, pupilId: null, cancellationToken);
+            accounts.AddRange(tenantAccounts ?? []);
+        }
+
+        return new RegistrationResult(deviceKey, accounts);
+    }
+
+    private static (DeviceKey Key, byte[] Certificate) CreateDeviceKey()
     {
         using var rsa = RSA.Create(2048);
 
         var certRequest = new CertificateRequest(
-            "CN=OpenVulcan",
+            "CN=APP_CERTIFICATE CA Certificate",
             rsa,
             HashAlgorithmName.SHA256,
             RSASignaturePadding.Pkcs1
             );
 
+        // Long validity — the certificate is the device's identity and there is no renewal flow.
         using var cert = certRequest.CreateSelfSigned(
             DateTimeOffset.UtcNow.AddMinutes(-5),
-            DateTimeOffset.UtcNow.AddYears(1)
+            DateTimeOffset.UtcNow.AddYears(20)
             );
 
-        var privatePemKey = rsa.ExportPkcs8PrivateKeyPem();
-        var certPem = cert.ExportCertificatePem();
-        var fingerprint = cert.Thumbprint.ToLowerInvariant();
+        var key = new DeviceKey(
+            rsa.ExportPkcs8PrivateKeyPem(),
+            cert.ExportCertificatePem(),
+            cert.Thumbprint.ToLowerInvariant()
+            );
 
-        var payload = new
-        {
-            Pin = pin,
-            Token = token,
-            AppVersion = "24.0.0",
-            DeviceId = Guid.NewGuid().ToString(),
-            DeviceName = "vulcanbot",
-            DeviceModel = ".NET 10",
-            DeviceType = "Android",
-            Certificate = Convert.ToBase64String(cert.RawData),
-            CertificateType = "X509"
-        };
-        
-        // HTTP
-        var requestUri = $"https://certyfikaty.vulcan.net.pl/{symbol}/api/mobile/register/new";
-        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-        {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
-        };
-        
-        request.Headers.Add("User-Agent", "Dart 3.0 (dart:io)");
-        request.Headers.Add("vOS", "Android");
-        request.Headers.Add("vDeviceModel", ".NET 10");
-        request.Headers.Add("vAPI", "1");
-        request.Headers.Add("vDate", DateTimeOffset.UtcNow.ToString("r"));
-
-        var response = await client.SendAsync(request, cancellationToken);
-        var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Registration failed. " +
-                                                                               $"Status: {response.StatusCode}. " +
-                                                                               $"Message: {jsonResponse}");
-
-        var deviceKey = new DeviceKey(privatePemKey, certPem, fingerprint);
-        return new RegistrationResult(deviceKey, symbol, requestUri);
+        return (key, cert.RawData);
     }
 }
