@@ -10,11 +10,12 @@ public record HebeHomework(
     int IdHomework,
     string Content,
     bool IsAnswerRequired,
-    HebeDateTime DateCreated,
-    HebeDateTime Date,
-    HebeDateTime? AnswerDate,
-    HebeDateTime? AnswerDeadline,
+    DateTime CreatedAt,
+    DateTime ModifiedAt,
+    DateOnly DateAt,
+    DateTime? AnswerAt,
+    DateOnly DeadlineAt,
     HebeTeacher Creator,
     HebeSubject Subject,
-    IReadOnlyList<HebeAttachment>? Attachments
+    IReadOnlyList<HebeAttachment>? Attachments = null
     );

@@ -24,7 +24,15 @@ public class HebeClient(HttpClient client)
     public const string DeviceOs = "Android";
     public const string DeviceModel = ".NET 10";
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    // Strict: a missing or null field that the DTO says is required fails with the JSON path
+    // instead of silently becoming null.
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        RespectNullableAnnotations = true,
+        RespectRequiredConstructorParameters = true,
+        Converters = { new HebeDateTimeConverter(), new HebeDateOnlyConverter() }
+    };
 
     public Task<T?> GetAsync<T>(string url, DeviceKey key, int? pupilId, CancellationToken cancellationToken) =>
         SendAsync<T>(HttpMethod.Get, url, key, envelope: null, pupilId, cancellationToken);
@@ -75,7 +83,7 @@ public class HebeClient(HttpClient client)
         }
         catch (JsonException e)
         {
-            throw new HebeException($"{method} {url} returned a response that is not a Hebe envelope.", innerException: e);
+            throw new HebeException($"{method} {url} returned an unexpected response: {e.Message}", innerException: e);
         }
 
         if (parsed?.Status is null) throw new HebeException($"{method} {url} returned a response without Status.");

@@ -8,7 +8,7 @@ namespace vulcanbot.Dto.Hebe;
 public record HebeAccount(
     string TopLevelPartition,
     string Partition,
-    string ClassDisplay,
+    string? ClassDisplay,
     HebeUnit Unit,
     HebeConstituentUnit ConstituentUnit,
     HebePupil Pupil,
@@ -21,7 +21,7 @@ public record HebeUnit(
     string Short,
     [property: JsonPropertyName("RestURL")] string RestUrl,
     string Name,
-    string DisplayName
+    string? DisplayName
     );
 
 public record HebeConstituentUnit(
@@ -34,11 +34,11 @@ public record HebeConstituentUnit(
 public record HebePupil(
     int Id,
     int LoginId,
-    string? LoginValue,
     string FirstName,
-    string? SecondName,
     string Surname,
-    bool Sex
+    bool Sex,
+    string? SecondName = null,
+    string? LoginValue = null
     );
 
 public record HebePeriod(
@@ -47,6 +47,6 @@ public record HebePeriod(
     int Number,
     bool Current,
     bool Last,
-    HebeDateTime Start,
-    HebeDateTime End
+    [property: JsonPropertyName("StartAt")] DateOnly Start,
+    [property: JsonPropertyName("EndAt")] DateOnly End
     );

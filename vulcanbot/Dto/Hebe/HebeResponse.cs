@@ -4,16 +4,16 @@ namespace vulcanbot.Dto.Hebe;
 /// Envelope every Hebe (UONET+ mobile API) response is wrapped in.
 /// </summary>
 public record HebeResponse<T>(
-    T? Envelope,
     HebeStatus Status,
-    string? RequestId,
-    long Timestamp,
-    string? TimestampFormatted,
-    string? EnvelopeType,
-    string? InResponseTo
+    T? Envelope = default,
+    string? RequestId = null,
+    long Timestamp = 0,
+    string? TimestampFormatted = null,
+    string? EnvelopeType = null,
+    string? InResponseTo = null
     );
 
 public record HebeStatus(
     int Code,
-    string Message
+    string? Message
     );

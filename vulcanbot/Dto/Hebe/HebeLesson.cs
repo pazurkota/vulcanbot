@@ -7,7 +7,7 @@ namespace vulcanbot.Dto.Hebe;
 /// </summary>
 public record HebeLesson(
     int Id,
-    HebeDateTime Date,
+    [property: JsonPropertyName("DateAt")] DateOnly Date,
     HebeTimeSlot TimeSlot,
     HebeRoom? Room,
     HebeTeacher? TeacherPrimary,

@@ -7,7 +7,8 @@ using vulcanbot.Service;
 using vulcanbot.Service.Hebe;
 
 var command = args.FirstOrDefault();
-var builder = Host.CreateApplicationBuilder(command == "register" ? args[1..] : args);
+var isCommand = command is "register" or "sync";
+var builder = Host.CreateApplicationBuilder(isCommand ? args[1..] : args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Connection string 'Default' is not configured.");
@@ -15,12 +16,19 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
 builder.Services.AddDbContext<VulcanDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddHttpClient<HebeClient>();
 builder.Services.AddTransient<VulcanRegistrationService>();
+builder.Services.AddTransient<HomeworkSyncService>();
 
 using var host = builder.Build();
 
 if (command == "register")
 {
     await RegisterAsync(host.Services, args.ElementAtOrDefault(1));
+    return;
+}
+
+if (command == "sync")
+{
+    Environment.ExitCode = await SyncAsync(host.Services);
     return;
 }
 
@@ -73,4 +81,44 @@ static async Task RegisterAsync(IServiceProvider services, string? path)
     }
 
     await db.SaveChangesAsync();
+}
+
+// Usage: vulcanbot sync
+// Fetches homework due from 2 weeks ago to 2 months ahead for every registered account.
+static async Task<int> SyncAsync(IServiceProvider services)
+{
+    await using var scope = services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<VulcanDbContext>();
+    var homeworkSync = scope.ServiceProvider.GetRequiredService<HomeworkSyncService>();
+
+    await db.Database.MigrateAsync();
+
+    var today = DateOnly.FromDateTime(DateTime.Now);
+    var accounts = await db.Accounts.OrderBy(a => a.Surname).ThenBy(a => a.FirstName).ToListAsync();
+    if (accounts.Count == 0)
+    {
+        Console.Error.WriteLine("No registered accounts — run 'register' first.");
+        return 1;
+    }
+
+    var failed = 0;
+    foreach (var account in accounts)
+    {
+        try
+        {
+            var result = await homeworkSync.SyncAsync(account, today.AddDays(-14), today.AddMonths(2),
+                CancellationToken.None);
+            Console.WriteLine($"{account.FirstName} {account.Surname}: homework fetched {result.Fetched}, " +
+                              $"added {result.Added}, updated {result.Updated}");
+        }
+        catch (HebeException e)
+        {
+            // One broken account (e.g. device unregistered in eduVULCAN) shouldn't stop the others.
+            Console.Error.WriteLine($"{account.FirstName} {account.Surname}: {e.Message}");
+            db.ChangeTracker.Clear();
+            failed++;
+        }
+    }
+
+    return failed == 0 ? 0 : 1;
 }

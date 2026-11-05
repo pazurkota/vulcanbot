@@ -5,7 +5,7 @@ NAME     ?=
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build test test-unit run up down logs ps image psql register migration clean
+.PHONY: help build test test-unit run up down logs ps image psql register sync migration clean
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -54,3 +54,6 @@ psql: ## Open psql in the Postgres container
 register: ## Register a device from the eduVULCAN #ap JSON: make register [AP=ap.json]
 	@test -f "$(AP)" || (echo "$(AP) not found — save the #ap value from https://eduvulcan.pl/api/ap there" && exit 1)
 	docker compose run --rm --build -T vulcanbot register < $(AP)
+
+sync: ## Fetch homework for all registered accounts into the database
+	docker compose run --rm --build -T vulcanbot sync

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
+using vulcanbot.Dto;
 
 namespace vulcanbot.Model;
 
@@ -35,4 +36,17 @@ public class VulcanAccount
     public List<Exam> Exams { get; set; } = [];
     public List<Homework> Homeworks { get; set; } = [];
     public List<Lesson> Lessons { get; set; } = [];
+
+    public DeviceKey ToDeviceKey() => new(PrivatePemKey, CertificatePem, Fingerprint);
+
+    /// <summary>
+    /// Builds a Hebe data URL, e.g. <c>mobile/homework/byPupil</c>, from the unit's RestURL.
+    /// </summary>
+    public string HebeUrl(string endpoint)
+    {
+        var restUrl = RestUrl.TrimEnd('/');
+        if (!restUrl.EndsWith("/api", StringComparison.OrdinalIgnoreCase)) restUrl += "/api";
+
+        return $"{restUrl}/{endpoint}";
+    }
 }

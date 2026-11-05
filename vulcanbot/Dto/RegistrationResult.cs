@@ -24,6 +24,6 @@ public record RegistrationResult(
         LoginId = a.Pupil.LoginId,
         FirstName = a.Pupil.FirstName,
         Surname = a.Pupil.Surname,
-        ClassDisplay = a.ClassDisplay
+        ClassDisplay = a.ClassDisplay ?? ""
     });
 }
