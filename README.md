@@ -70,7 +70,7 @@ Your eduVULCAN password is never given to the bot. Pass `AP=path/to/file.json` t
    make sync          # docker compose run --rm --build -T vulcanbot sync
    ```
 
-   For every registered account this downloads homework and exams due from 2 weeks ago to 2 months ahead (`Homeworks`, `Exams` tables) and the timetable from a week ago to 3 weeks ahead (`Lessons` table). Lessons include substitutions, cancellations and moved lessons — see the `ChangeType`, `ChangeReason` and `MovedToDate` columns. New items are added; items changed in Vulcan are updated and marked for the next calendar sync. Run it as often as you like — it is safe to repeat.
+   For every registered account this downloads homework and exams due from 2 weeks ago to 2 months ahead (`Homeworks`, `Exams` tables) and the timetable from a week ago to 3 weeks ahead (`Lessons` table). Lessons include substitutions, cancellations and moved lessons — see the `ChangeType`, `ChangeReason` and `MovedToDate` columns. Lessons that disappear from the timetable are deleted (or marked with `RemovedAt` if they already have a calendar event). New items are added; items changed in Vulcan are updated and marked for the next calendar sync. Run it as often as you like — it is safe to repeat.
 
 ### Registration troubleshooting
 

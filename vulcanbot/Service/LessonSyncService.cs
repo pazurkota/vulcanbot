@@ -24,9 +24,10 @@ public class LessonSyncService(HebeClient hebe, VulcanDbContext db)
     {
         var key = account.ToDeviceKey();
 
-        var fetched = (await hebe.GetAsync<List<HebeLesson>>(
+        var response = await hebe.GetAsync<List<HebeLesson>>(
             account.HebeByPupilUrl("mobile/schedule/withchanges/byPupil", from, to), key, account.PupilId,
-            cancellationToken) ?? []).DistinctBy(l => (l.Id, l.Date)).ToList();
+            cancellationToken) ?? [];
+        var fetched = response.DistinctBy(l => (l.Id, l.Date)).ToList();
 
         // eduVULCAN publishes substitutions/cancellations here rather than in withchanges.
         var changes = (await hebe.GetAsync<List<HebeLessonSubstitution>>(
@@ -65,8 +66,47 @@ public class LessonSyncService(HebeClient hebe, VulcanDbContext db)
             updated++;
         }
 
+        // A full page may be cut off — lessons missing from it aren't necessarily gone, so don't remove anything.
+        var removed = response.Count < HebeClient.PageSize
+            ? await RemoveMissingAsync(account, from, to, fetched, cancellationToken)
+            : 0;
+
         await db.SaveChangesAsync(cancellationToken);
-        return new SyncResult(fetched.Count, added, updated);
+        return new SyncResult(fetched.Count, added, updated, removed);
+    }
+
+    /// <summary>
+    /// Lessons in [from, to] that Vulcan no longer returns were removed from the timetable.
+    /// </summary>
+    private async Task<int> RemoveMissingAsync(
+        VulcanAccount account,
+        DateOnly from,
+        DateOnly to,
+        List<HebeLesson> fetched,
+        CancellationToken cancellationToken
+        )
+    {
+        var current = fetched.Select(l => (l.Id, l.Date)).ToHashSet();
+        var missing = (await db.Lessons
+                .Where(l => l.AccountId == account.Id && l.Date >= from && l.Date <= to && l.RemovedAt == null)
+                .ToListAsync(cancellationToken))
+            .Where(l => !current.Contains((l.VulcanId, l.Date)))
+            .ToList();
+
+        foreach (var lesson in missing)
+        {
+            if (lesson.CalendarEventId is null)
+            {
+                db.Lessons.Remove(lesson);
+                continue;
+            }
+
+            // Keep the row so the calendar sync can delete the event first.
+            lesson.RemovedAt = DateTime.UtcNow;
+            lesson.CalendarSyncedAt = null;
+        }
+
+        return missing.Count;
     }
 
     private static void Apply(Lesson lesson, HebeLesson item, HebeLessonSubstitution? change)
@@ -79,6 +119,7 @@ public class LessonSyncService(HebeClient hebe, VulcanDbContext db)
         var slot = replacement?.TimeSlot ?? item.TimeSlot;
 
         lesson.Date = item.Date;
+        lesson.RemovedAt = null; // back in the timetable
         lesson.Start = slot.Start;
         lesson.End = slot.End;
         lesson.Position = slot.Position;

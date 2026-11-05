@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using vulcanbot.Dto;
+using vulcanbot.Service.Hebe;
 
 namespace vulcanbot.Model;
 
@@ -54,7 +55,7 @@ public class VulcanAccount
     /// <summary>
     /// URL of a <c>.../byPupil</c> endpoint filtered by date range, e.g. <c>mobile/exam/byPupil</c>.
     /// </summary>
-    public string HebeByPupilUrl(string endpoint, DateOnly from, DateOnly to, int pageSize = 500) =>
+    public string HebeByPupilUrl(string endpoint, DateOnly from, DateOnly to, int pageSize = HebeClient.PageSize) =>
         HebeUrl(endpoint) +
         $"?unitId={UnitId}" +
         $"&pupilId={PupilId}" +

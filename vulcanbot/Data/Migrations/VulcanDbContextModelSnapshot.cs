@@ -179,6 +179,9 @@ namespace vulcanbot.Data.Migrations
                     b.Property<int>("Position")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Room")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");

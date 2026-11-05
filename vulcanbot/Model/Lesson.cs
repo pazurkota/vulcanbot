@@ -31,6 +31,12 @@ public class Lesson
     /// <summary>For <see cref="LessonChangeType.MovedAway"/>: the day the lesson was moved to, when known.</summary>
     public DateOnly? MovedToDate { get; set; }
 
+    /// <summary>
+    /// Set when the lesson disappeared from the timetable but still has a calendar event to delete.
+    /// Lessons without an event are deleted right away.
+    /// </summary>
+    public DateTime? RemovedAt { get; set; }
+
     [MaxLength(256)] public string? CalendarEventId { get; set; }
     public DateTime? CalendarSyncedAt { get; set; }
 }

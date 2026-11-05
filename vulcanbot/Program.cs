@@ -133,4 +133,4 @@ static async Task<int> SyncAsync(IServiceProvider services)
 }
 
 static string Describe(SyncResult result) =>
-    $"fetched {result.Fetched}, added {result.Added}, updated {result.Updated}";
+    $"fetched {result.Fetched}, added {result.Added}, updated {result.Updated}, removed {result.Removed}";

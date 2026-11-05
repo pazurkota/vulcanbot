@@ -21,6 +21,9 @@ public class HebeClient(HttpClient client)
     public const string UserAgent = "Dart/3.8 (dart:io)";
     public const int ApiVersion = 1;
 
+    /// <summary>Items per page requested from <c>.../byPupil</c> endpoints.</summary>
+    public const int PageSize = 500;
+
     public const string DeviceOs = "Android";
     public const string DeviceModel = ".NET 10";
 

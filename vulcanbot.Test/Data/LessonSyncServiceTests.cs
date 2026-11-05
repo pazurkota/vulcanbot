@@ -328,11 +328,185 @@ public class LessonSyncServiceTests
         Assert.That(await context.Lessons.CountAsync(), Is.Zero);
     }
 
+    [Test]
+    public async Task SyncAsync_LessonMissingFromTimetable_IsDeleted()
+    {
+        RespondWithLessons(Lesson(301, Monday), Lesson(302, Monday));
+        await SyncAsync();
+
+        RespondWithLessons(Lesson(301, Monday));
+        var result = await SyncAsync();
+
+        await using var context = PostgresFixture.CreateContext();
+        Assert.Multiple(async () =>
+        {
+            Assert.That(result, Is.EqualTo(new SyncResult(Fetched: 1, Added: 0, Updated: 0, Removed: 1)));
+            Assert.That(await context.Lessons.Select(l => l.VulcanId).ToListAsync(), Is.EqualTo(new[] { 301 }));
+        });
+    }
+
+    [Test]
+    public async Task SyncAsync_EmptyTimetable_DeletesAllLessonsInWindow()
+    {
+        RespondWithLessons(Lesson(301, Monday), Lesson(302, Monday.AddDays(1)));
+        await SyncAsync();
+
+        RespondWithLessons();
+        var result = await SyncAsync();
+
+        await using var context = PostgresFixture.CreateContext();
+        Assert.Multiple(async () =>
+        {
+            Assert.That(result.Removed, Is.EqualTo(2));
+            Assert.That(await context.Lessons.CountAsync(), Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task SyncAsync_LessonsOutsideWindow_AreKept()
+    {
+        await AddLessonAsync(_account, 301, From.AddDays(-1));
+        await AddLessonAsync(_account, 302, To.AddDays(1));
+        RespondWithLessons();
+
+        var result = await SyncAsync();
+
+        await using var context = PostgresFixture.CreateContext();
+        Assert.Multiple(async () =>
+        {
+            Assert.That(result.Removed, Is.Zero);
+            Assert.That(await context.Lessons.CountAsync(), Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task SyncAsync_WindowBoundaries_AreInclusive()
+    {
+        await AddLessonAsync(_account, 301, From);
+        await AddLessonAsync(_account, 302, To);
+        RespondWithLessons();
+
+        var result = await SyncAsync();
+
+        Assert.That(result.Removed, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task SyncAsync_OtherAccountsLessons_AreKept()
+    {
+        var other = await SaveAccountAsync(pupilId: 8);
+        await AddLessonAsync(other, 301, Monday);
+        RespondWithLessons();
+
+        await SyncAsync();
+
+        await using var context = PostgresFixture.CreateContext();
+        Assert.That(await context.Lessons.CountAsync(l => l.AccountId == other.Id), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task SyncAsync_MissingLessonWithCalendarEvent_IsMarkedRemovedInsteadOfDeleted()
+    {
+        RespondWithLessons(Lesson(301, Monday));
+        await SyncAsync();
+        await MarkCalendarSyncedAsync();
+
+        RespondWithLessons();
+        var result = await SyncAsync();
+
+        var lesson = await SingleLessonAsync();
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Removed, Is.EqualTo(1));
+            Assert.That(lesson.RemovedAt, Is.EqualTo(DateTime.UtcNow).Within(TimeSpan.FromMinutes(1)));
+            Assert.That(lesson.CalendarEventId, Is.EqualTo("event-1"));
+            Assert.That(lesson.CalendarSyncedAt, Is.Null, "Calendar sync has to delete the event.");
+        });
+    }
+
+    [Test]
+    public async Task SyncAsync_AlreadyRemovedLesson_IsNotCountedAgain()
+    {
+        RespondWithLessons(Lesson(301, Monday));
+        await SyncAsync();
+        await MarkCalendarSyncedAsync();
+        RespondWithLessons();
+        await SyncAsync();
+
+        var result = await SyncAsync();
+
+        Assert.That(result.Removed, Is.Zero);
+    }
+
+    [Test]
+    public async Task SyncAsync_RemovedLessonBackInTimetable_IsRestored()
+    {
+        RespondWithLessons(Lesson(301, Monday));
+        await SyncAsync();
+        await MarkCalendarSyncedAsync();
+        RespondWithLessons();
+        await SyncAsync();
+
+        RespondWithLessons(Lesson(301, Monday));
+        var result = await SyncAsync();
+
+        var lesson = await SingleLessonAsync();
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(new SyncResult(Fetched: 1, Added: 0, Updated: 1)));
+            Assert.That(lesson.RemovedAt, Is.Null);
+            Assert.That(lesson.CalendarEventId, Is.EqualTo("event-1"));
+        });
+    }
+
+    [Test]
+    public async Task SyncAsync_FullPage_DoesNotRemoveAnything()
+    {
+        await AddLessonAsync(_account, 1, Monday.AddDays(1));
+        RespondWithLessons(Enumerable.Range(1000, HebeClient.PageSize)
+            .Select(id => (object)Lesson(id, Monday))
+            .ToArray());
+
+        var result = await SyncAsync();
+
+        await using var context = PostgresFixture.CreateContext();
+        Assert.Multiple(async () =>
+        {
+            Assert.That(result.Removed, Is.Zero);
+            Assert.That(await context.Lessons.AnyAsync(l => l.VulcanId == 1), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task SyncAsync_HebeError_DoesNotRemoveAnything()
+    {
+        RespondWithLessons(Lesson(301, Monday));
+        await SyncAsync();
+
+        _handler.Respond("schedule/changes/byPupil", """{"Status":{"Code":500,"Message":"Błąd"},"Envelope":null}""");
+        RespondWithLessons();
+        Assert.ThrowsAsync<HebeException>(() => SyncAsync());
+
+        await using var context = PostgresFixture.CreateContext();
+        Assert.That(await context.Lessons.CountAsync(), Is.EqualTo(1));
+    }
+
     private async Task<SyncResult> SyncAsync()
     {
         await using var context = PostgresFixture.CreateContext();
         var service = new LessonSyncService(new HebeClient(_client), context);
         return await service.SyncAsync(_account, From, To, CancellationToken.None);
+    }
+
+    private static async Task AddLessonAsync(VulcanAccount account, int vulcanId, DateOnly date)
+    {
+        await using var context = PostgresFixture.CreateContext();
+        context.Lessons.Add(new Lesson
+        {
+            AccountId = account.Id, VulcanId = vulcanId, Date = date,
+            Start = new TimeOnly(8, 0), End = new TimeOnly(8, 45), Position = 1
+        });
+        await context.SaveChangesAsync();
     }
 
     private static async Task<Lesson> SingleLessonAsync()
@@ -426,7 +600,7 @@ public class LessonSyncServiceTests
     private static object Teacher(string name, string surname) =>
         new { Id = name.Length, Name = name, Surname = surname, DisplayName = $"{name} {surname}" };
 
-    private static async Task<VulcanAccount> SaveAccountAsync()
+    private static async Task<VulcanAccount> SaveAccountAsync(int pupilId = 7)
     {
         using var rsa = RSA.Create(2048);
         using var cert = new CertificateRequest("CN=test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
@@ -441,8 +615,8 @@ public class LessonSyncServiceTests
             RestUrl = RestUrl,
             UnitId = 1,
             UnitName = "Szkoła Podstawowa nr 1",
-            PupilId = 7,
-            LoginId = 70,
+            PupilId = pupilId,
+            LoginId = pupilId * 10,
             FirstName = "Jan",
             Surname = "Uczeń",
             ClassDisplay = "8A"
